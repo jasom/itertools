@@ -80,17 +80,19 @@
   (multiple-value-bind
 	(tmp v s i n)
       (get-iterator-expansion iter env)
-    (let ((state (gensym)))
-    (values
-     `(,@tmp  ,state)
-     `(,@v 0)
+    (with-gensyms (state countg)
+      (values
+     `(,@tmp  ,state ,countg)
+     `(,@v 0 ,count)
      s
      i
-     `(progn
-	(setf ,state (mod (1+ ,state) ,count))
-	(if (= ,state 0)
-	  ,n
-	  (values ,@s)))))))
+     `(if (eql ,countg :inf)
+	  (values ,@s)
+	  (progn
+	    (setf ,state (mod (1+ ,state) ,countg))
+	    (if (= ,state 0)
+		,n
+		(values ,@s))))))))
 
 (define-iterator-expander compress (env name i1 i2)
   (declare (ignorable name))
@@ -168,3 +170,50 @@
 		   (multiple-value-setq ,results (values ,@(third i))))))
 	,ensure-value
 	(values ,@results)))))
+
+(define-iterator-expander count (env name &optional (start 0) (step 1))
+  (declare (ignore env name))
+  (with-gensyms (stepg current)
+    (values
+     (list stepg)
+     (list step)
+     (list current)
+     start
+     `(+ ,current ,stepg))))
+
+(define-iterator-expander cycle (env name &rest lists)
+  (declare (ignore name env))
+  (let ((listg1 (loop repeat (length lists) collect (gensym)))
+	(listg2 (loop repeat (length lists) collect (gensym)))
+	(results (loop repeat (length lists) collect (gensym))))
+    (values
+    `(,@listg1 ,@listg2)
+    `(,@lists ,@lists)
+    `(,@results)
+    `(values ,@(loop for i in listg1 collect `(pop ,i)))
+    `(progn
+      ,@(loop for i in listg1
+	     for j in listg2
+	   collect `(unless ,i (setf ,i ,j)))
+      (values ,@(loop for i in listg1 collect `(pop ,i)))))))
+
+(define-iterator-expander dropwhile (env name predicate iter)
+  (declare (ignore name))
+  (multiple-value-bind
+	(tmp val res init next)
+      (get-iterator-expansion iter env)
+    (with-gensyms (pred)
+      (values
+       `(,pred ,@tmp)
+       `(,predicate ,@val)
+       res
+       `(progn
+	  (multiple-value-setq ,res ,init)
+	  (loop while (funcall ,pred ,@res)
+	     until (eql ,(car res) 'eoi)
+	     do (multiple-value-setq ,res ,next))
+	  (values ,@res))
+       `(progn (multiple-value-setq ,res ,next)
+	       (values ,@res))))))
+
+		
