@@ -4,7 +4,8 @@
 
 ;;; "itertools" goes here. Hacks and glory await!
 
-(defparameter *expanders* (make-hash-table))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *expanders* (make-hash-table)))
 
 (defmacro define-iterator-expander (name args &body b)
   (with-gensyms (x)
@@ -67,7 +68,9 @@
    tmps
    lists
    store
-   `(values ,@(loop for item in tmps collect `(pop ,item)))
+   `(if (every #'identity (list ,@tmps))
+	(values ,@(loop for item in tmps collect `(pop ,item)))
+	(values 'eoi))
    `(if (every #'identity (list ,@tmps))
 	(values ,@(loop for item in tmps collect `(pop ,item)))
 	(values 'eoi)))))
@@ -99,7 +102,7 @@
       (get-iterator-expansion i2 env)
     (values
      `(,@t1 ,@t2 ,@s2)
-     `(,@v1 ,@v2)
+     `(,@v1 ,@v2 ,@(mapcar (lambda (x) (declare (ignore x)) nil) s2))
      `(,@s1)
      `(progn
 	(multiple-value-setq ,s1 ,i1)
@@ -130,10 +133,10 @@
 				   maximize (length (third i)))
 		      collect (gensym)))
 	(ensure-value
-	 `(loop while (eql (car ,results) 'eoi)
+	 `(loop while (eql ,(car results) 'eoi)
 	     do (pop ,itertmp)
-	     while (cdr ,itertmp)
-	       (case (car ,itertmp)
+	     while ,itertmp
+	       do (case (car ,itertmp)
 		 ,@(loop for key in states
 		       for iter in iterinfo
 		       collect
@@ -147,10 +150,12 @@
        ,@(loop for i in iterinfo append (first i))
        ,@(loop for i in iterinfo append (third i))
 	)
-     `(',states ,@(loop for i in iterinfo append (second i)))
+     `(',states ,@(loop for i in iterinfo append (second i))
+		,@(loop repeat (length iterinfo) collect nil))
      results
      `(progn
-	(setf (car ,results) 'eoi)
+	(push nil ,itertmp)
+	(setf ,(car results) 'eoi)
 	,ensure-value
 	(values ,@results))
      `(progn
@@ -160,6 +165,6 @@
 		 collect
 		 `(,key
 		   (multiple-value-setq ,(third i) ,(fifth i))
-		   (multiple-value-setq ,states (values ,@(third i))))))
+		   (multiple-value-setq ,results (values ,@(third i))))))
 	,ensure-value
 	(values ,@results)))))
