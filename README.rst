@@ -235,7 +235,7 @@ Description
 ###########
 
 chain
-^^^
+^^^^^
 
 Syntax
 ######
